@@ -1,0 +1,178 @@
+;; kuruma — 上流データ源の目録
+;;
+;; この repo は corpus である。corpus の値は「何が書いてあるか」ではなく
+;; **「それがどこから来たか」**で決まる。にもかかわらず、抽出時点の kuruma は
+;; 上流を散文（CLAUDE.md の command 表・BUSINESS_PLAN.md の脚注）でしか
+;; 持っておらず、機械可読な出典が 1 件も無かった。scripts/seed_vehicles.mjs は
+;; "real-world specs" と名乗る 90 台超の諸元を持つが、その諸元がどの出典に
+;; 由来するかはどこにも書かれていない。
+;;
+;; ここはその目録。**引けなかった URL は載せない。**
+;; 検査は scripts/verify_sources.cljs（nbb）。全 :url を実際に取得し、
+;; :expect-status と食い違えば exit 1 で落ちる。
+;;
+;; :verified は「その日にそう観測した」という記録であって保証ではない。
+;; 上流は動く。verifier が現在地を答える。
+
+{:schema     "kuruma.sources/v1"
+ :repository "cloud-itonami/kuruma"
+ :purpose    "kuruma.etzhayyim.com の車両 corpus が依拠する外部データ源の目録"
+ :verifier   "scripts/verify_sources.cljs"
+ :verified-at "2026-08-26"
+
+ ;; ── 収集源 — corpus の本体を作るもの ────────────────────────────────
+ :sources
+ [{:id        :nhtsa-vpic
+   :name      "NHTSA vPIC (Vehicle Product Information Catalog)"
+   :publisher "National Highway Traffic Safety Administration, U.S. Department of Transportation"
+   :role      :collection
+   :feeds     ["collect_nhtsa"]
+   :provides  "メーカー名の統制語彙、メーカー別モデル一覧、VIN からの諸元復号"
+   :access    {:auth :none :format :json :rate-limit :not-published}
+   :license   {:stated :not-stated-on-endpoint
+               :note   "米国連邦政府の著作物。vPIC は認証なしで公開されているが、
+                        endpoint 自身は license 文字列を返さない。断定しない。"
+               :terms-url "https://vpic.nhtsa.dot.gov/api/"}
+   :endpoints
+   [{:url "https://vpic.nhtsa.dot.gov/api/vehicles/GetAllMakes?format=json"
+     :expect-status 200
+     :returns "全メーカー (Make_ID, Make_Name)"
+     :verified {:at "2026-08-26" :status 200 :observed "Count=12346, 611,453 bytes"}}
+    {:url "https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMake/toyota?format=json"
+     :expect-status 200
+     :returns "指定メーカーのモデル一覧"
+     :verified {:at "2026-08-26" :status 200}}
+    {:url "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/1FTFW1ET5DFC10312?format=json&modelyear=2013"
+     :expect-status 200
+     :returns "VIN 1 件の復号諸元（例示 VIN は NHTSA 自身の docs 掲載値）"
+     :verified {:at "2026-08-26" :status 200
+                :observed "Make=FORD Model=F-150 ModelYear=2013 BodyClass=Pickup Cylinders=6"}}]}
+
+  {:id        :wikidata
+   :name      "Wikidata SPARQL query service"
+   :publisher "Wikimedia Foundation"
+   :role      :collection
+   :feeds     ["collect_wikidata_cars"]
+   :provides  "自動車モデル (Q3231690) の実体、多言語ラベル、メーカー関係"
+   :access    {:auth :none :format :sparql-results-json
+               :rate-limit "User-Agent の申告が必要。連絡先を含めること"}
+   :license   {:stated "CC0 1.0 (structured data)"
+               :note   "Wikidata:Licensing が『All structured data in the main,
+                        property and lexeme namespaces is made available under the
+                        Creative Commons CC0 License』と明記。本文名前空間は CC BY-SA 4.0。"
+               :terms-url "https://www.wikidata.org/wiki/Wikidata:Licensing"}
+   :endpoints
+   [{:url "https://query.wikidata.org/sparql"
+     :expect-status 200
+     :returns "SPARQL 結果。P31=Q3231690 で自動車モデルを引く"
+     :verified {:at "2026-08-26" :status 200
+                :observed "3 件取得 (Q1610 Alfa Romeo 159 ほか)"}}
+    {:url "https://www.wikidata.org/wiki/Q3231690"
+     :expect-status 200
+     :returns "クラス『automobile model』の定義。collect_wikidata_cars の P31 値"
+     :verified {:at "2026-08-26" :status 200}}]}
+
+  ;; ── 市場・統計源 — BUSINESS_PLAN.md の数値の裏付け ──────────────────
+  {:id        :jama
+   :name      "日本自動車工業会 (JAMA) 統計"
+   :publisher "一般社団法人 日本自動車工業会"
+   :role      :market-reference
+   :feeds     ["BUSINESS_PLAN.md"]
+   :provides  "四輪車の生産・販売・保有の公式統計"
+   :access    {:auth :none :format :html}
+   :license   {:stated :not-stated-on-page
+               :note   "権利者は JAMA。引用の可否は各ページの表示に従う。再配布しない。"
+               :terms-url "https://www.jama.or.jp/"}
+   :endpoints
+   [{:url "https://www.jama.or.jp/statistics/facts/four_wheeled/index.html"
+     :expect-status 200
+     :returns "四輪車統計のインデックス"
+     :verified {:at "2026-08-26" :status 200}}
+    {:url "https://www.jama.or.jp/release/latest_update/2024/2903/"
+     :expect-status 200
+     :returns "BUSINESS_PLAN.md が既に引いていた発表 (抽出時点で散文のみ)"
+     :verified {:at "2026-08-26" :status 200}}]}
+
+  {:id        :airia
+   :name      "自動車検査登録情報協会 (AIRIA) 保有台数統計"
+   :publisher "一般財団法人 自動車検査登録情報協会"
+   :role      :market-reference
+   :provides  "日本国内の自動車保有台数。registration actor の母数"
+   :access    {:auth :none :format :html}
+   :license   {:stated :not-stated-on-page
+               :note   "権利者は AIRIA。数値の引用のみ。再配布しない。"
+               :terms-url "https://www.airia.or.jp/"}
+   :endpoints
+   [{:url "https://www.airia.or.jp/publish/statistics/number.html"
+     :expect-status 200
+     :returns "保有台数統計のインデックス"
+     :verified {:at "2026-08-26" :status 200}}]}
+
+  {:id        :dentsu-ad-market
+   :name      "電通「日本の広告費」"
+   :publisher "株式会社電通"
+   :role      :market-reference
+   :feeds     ["BUSINESS_PLAN.md"]
+   :provides  "日本の広告市場規模。広告収益目標 (10M JPY/月) の前提"
+   :access    {:auth :none :format :html}
+   :license   {:stated :not-stated-on-page
+               :note   "権利者は電通。数値の引用のみ。再配布しない。"
+               :terms-url "https://www.dentsu.co.jp/"}
+   :endpoints
+   [{:url "https://www.dentsu.co.jp/news/release/2025/0227-010853.html"
+     :expect-status 200
+     :returns "BUSINESS_PLAN.md が既に引いていた発表"
+     :verified {:at "2026-08-26" :status 200}}
+    {:url "https://www.dentsu.co.jp/news/release/2025/0312-010858.html"
+     :expect-status 200
+     :returns "同上"
+     :verified {:at "2026-08-26" :status 200}}]}
+
+  ;; ── 規格源 — ops/ のチェックリストが従っている基準 ────────────────
+  {:id        :google-search-central
+   :name      "Google Search Central documentation"
+   :publisher "Google"
+   :role      :standard
+   :feeds     ["ops/TECHNICAL_SEO_CHECKLIST.md"]
+   :provides  "Core Web Vitals・helpful content・多地域サイトの基準"
+   :access    {:auth :none :format :html}
+   :license   {:stated "CC BY 4.0"
+               :note   "Site Policies が『the content of this page is licensed under
+                        the Creative Commons Attribution 4.0 License』と明記。"
+               :terms-url "https://developers.google.com/site-policies"}
+   :endpoints
+   [{:url "https://developers.google.com/search/docs/appearance/core-web-vitals"
+     :expect-status 200
+     :returns "Core Web Vitals。KPI_DASHBOARD_SPEC の cwv_mobile_pass_rate の定義元"
+     :verified {:at "2026-08-26" :status 200}}
+    {:url "https://developers.google.com/search/docs/fundamentals/creating-helpful-content"
+     :expect-status 200
+     :returns "helpful content の基準"
+     :verified {:at "2026-08-26" :status 200}}
+    {:url "https://developers.google.com/search/docs/specialty/international/managing-multi-regional-sites"
+     :expect-status 200
+     :returns "多言語・多地域サイトの hreflang 基準。i18n 統合の根拠"
+     :verified {:at "2026-08-26" :status 200}}]}]
+
+ ;; ── 載せなかったもの（不在を黙らせないための記録）─────────────────
+ ;;
+ ;; 「引けなかった URL は載せない」を守ると、落とした事実自体が消える。
+ ;; 落としたものはここに残す —— 次に誰かが同じ URL を思いつくのを防ぐ。
+ :rejected
+ [{:url "https://www.mlit.go.jp/jidosha/jidosha_tk4_000002.html"
+   :intent "国土交通省の自動車関連統計を市場源に加えようとした"
+   :observed {:at "2026-08-26" :status 404}
+   :note "MLIT はページを再編する。現行の入口を特定できるまで載せない。
+          AIRIA が保有台数の同種データを持つので、当面はそちらで足りる。"}
+  {:url "https://www.nhtsa.gov/privacy-policy"
+   :intent "vPIC の terms-url にしようとした"
+   :observed {:at "2026-08-26" :status 403}
+   :note "NHTSA 本体サイトは bot に 403 を返す。vPIC API 側の入口を terms-url にした。"}]
+
+ ;; ── まだ出典を持たないもの（既知の穴）────────────────────────────
+ :gaps
+ [{:what "scripts/seed_vehicles.mjs の車両諸元 (90 台超)"
+   :why  "『real-world specs』と名乗るが出典が無い。日本市場のモデルは
+          vPIC(米国市場) では裏が取れず、Wikidata も諸元の粒度が足りない。"
+   :next "メーカー公式諸元表を 1 モデルずつ引くか、諸元を出典付きに置き換えるまで、
+          seed は『出典未確定』として扱う。台数を増やすのは出典を決めてから。"}]}

@@ -1,0 +1,174 @@
+#!/usr/bin/env nbb
+;; data/sources.edn の全 URL を実際に取得して、目録が現在も引けることを確かめる。
+;;
+;; なぜ要るか —— corpus の出典は「書いた日」ではなく「引ける間」だけ有効である。
+;; 上流は動く。載せた URL が 404 になったことを誰も見ていないと、目録は
+;; 『出典がある』という見た目だけを残して中身を失う。
+;;
+;;   exit 0  全 endpoint が :expect-status と一致した
+;;   exit 1  1 件以上が食い違った（本物の指摘）
+;;   exit 3  **答えられなかった** —— 目録が読めない / URL が 0 件 /
+;;           全件が network error（= このマシンに外向きが無い）。
+;;           0 でも 1 でもない値にするのは、「測れなかった検査」が
+;;           「測って問題が無かった検査」と同じ値を返さないようにするため
+;;           （superproject CLAUDE.md「検査を書く前・緑を信じる前の 6 問」）。
+;;
+;; 使い方:
+;;   nbb scripts/verify_sources.cljs [--catalog data/sources.edn] [--timeout-ms 25000]
+
+(ns verify-sources
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]
+            ["fs" :as fs]
+            ["path" :as path]))
+
+(def argv (vec (drop 2 (js->clj js/process.argv))))
+
+(defn- flag [name default]
+  (let [i (.indexOf argv name)]
+    (if (neg? i) default (get argv (inc i) default))))
+
+(def catalog-path (flag "--catalog" "data/sources.edn"))
+(def timeout-ms   (js/parseInt (flag "--timeout-ms" "25000")))
+(def user-agent
+  "kuruma-source-verifier/1.0 (+https://kuruma.etzhayyim.com; cloud-itonami/kuruma)")
+
+(defn- die-unanswerable [& msg]
+  (binding [*print-fn* *print-err-fn*]
+    (apply println "REFUSING TO REPORT A PASS:" msg))
+  (js/process.exit 3))
+
+;; ── 目録を読む ──────────────────────────────────────────────────────
+(when-not (fs/existsSync catalog-path)
+  (die-unanswerable "目録が無い:" catalog-path))
+
+(def catalog
+  (try
+    (edn/read-string (fs/readFileSync catalog-path "utf8"))
+    (catch :default e
+      (die-unanswerable "目録が EDN として読めない:" catalog-path "--" (.-message e)))))
+
+(when-not (map? catalog)
+  (die-unanswerable "目録が map ではない:" catalog-path))
+
+;; ── 検査対象の URL を集める ─────────────────────────────────────────
+;; endpoint は :expect-status と突き合わせる（食い違いは exit 1）。
+;; terms-url は出典の根拠なので同じく 200 を要求する。
+;; :rejected は「載せなかった理由」の記録。**落とさない** —— 上流が直った
+;; ことは欠陥ではなく、次に載せる合図なので報告だけする。
+(def checks
+  (vec
+   (concat
+    (for [s (:sources catalog)
+          e (:endpoints s)]
+      {:kind :endpoint :source (:id s) :url (:url e)
+       :expect (:expect-status e 200)})
+    (for [s (:sources catalog)
+          :let [u (get-in s [:license :terms-url])]
+          :when u]
+      {:kind :terms :source (:id s) :url u :expect 200})
+    (for [r (:rejected catalog)]
+      {:kind :rejected :source :rejected :url (:url r)
+       :expect (get-in r [:observed :status])}))))
+
+(def scannable (filterv #(not= :rejected (:kind %)) checks))
+
+;; evidence floor —— 絞り込みが壊れて 0 件になったとき、それを「違反 0 件 =
+;; 合格」として返さない。
+(when (empty? scannable)
+  (die-unanswerable "目録に検査できる URL が 1 件も無い"))
+
+;; ── 取得 ────────────────────────────────────────────────────────────
+(defn fetch-status [url]
+  (let [ctl (js/AbortController.)
+        tid (js/setTimeout #(.abort ctl) timeout-ms)]
+    (-> (js/fetch url #js {:method "GET"
+                           :redirect "follow"
+                           :signal (.-signal ctl)
+                           :headers #js {"User-Agent" user-agent}})
+        (.then (fn [res]
+                 (js/clearTimeout tid)
+                 {:status (.-status res)}))
+        (.catch (fn [err]
+                  (js/clearTimeout tid)
+                  ;; エラー本文を捨てない。status だけ記録する経路は、原因が
+                  ;; 応答の中に書いてあっても読まない。
+                  {:status nil
+                   :error (or (some-> (.-cause err) .-message) (.-message err))})))))
+
+(defn- pad [s n] (.padEnd (str s) n))
+
+(defn -main []
+  (-> (js/Promise.all
+       (clj->js (map (fn [c] (.then (fetch-status (:url c)) #(merge c %))) checks)))
+      (.then
+       (fn [rs]
+         (let [rs        (js->clj rs :keywordize-keys true)
+               rs        (map #(update % :expect (fn [e] (if (number? e) e (js/parseInt (str e))))) rs)
+               endpoints (filterv #(not= :rejected (:kind %)) rs)
+               rejected  (filterv #(= :rejected (:kind %)) rs)
+               net-err   (filterv #(nil? (:status %)) endpoints)
+               bad       (filterv #(and (:status %) (not= (:status %) (:expect %))) endpoints)
+               ok        (filterv #(= (:status %) (:expect %)) endpoints)]
+
+           (println (str "catalog=" catalog-path))
+           (println (str "SCANNED\t" (count endpoints)
+                         "\tOK=" (count ok)
+                         "\tMISMATCH=" (count bad)
+                         "\tNET-ERROR=" (count net-err)))
+           (println)
+           (doseq [r (sort-by (juxt :source :url) endpoints)]
+             (println (str "  " (pad (cond (nil? (:status r)) "ERR"
+                                           (= (:status r) (:expect r)) "ok"
+                                           :else "FAIL") 5)
+                           (pad (or (:status r) "-") 5)
+                           (pad (name (:kind r)) 9)
+                           (:url r)
+                           (when (:error r) (str "  <- " (:error r)))
+                           (when (and (:status r) (not= (:status r) (:expect r)))
+                             (str "  <- expected " (:expect r))))))
+
+           ;; :rejected は報告のみ。直っていたら次に載せる合図。
+           (when (seq rejected)
+             (println)
+             (println "rejected (載せなかった URL。落とさない):")
+             (doseq [r (sort-by :url rejected)]
+               (println (str "  " (pad (or (:status r) "ERR") 5)
+                             (:url r)
+                             (cond
+                               (nil? (:status r)) (str "  <- " (:error r))
+                               (not= (:status r) (:expect r))
+                               (str "  <- 記録は " (:expect r) " だが今は " (:status r)
+                                    "。再検討の合図")
+                               :else "  <- 記録どおり引けないまま")))))
+
+           (println)
+           (cond
+             ;; 全件 network error = このマシンに外向きが無い。目録の欠陥ではない。
+             (and (seq net-err) (empty? ok) (empty? bad))
+             (do (println "答えられなかった: 全" (count endpoints)
+                          "件が network error。外向き HTTPS を確認せよ。")
+                 (js/process.exit 3))
+
+             (seq bad)
+             (do (println (str "FAIL: " (count bad) " 件が :expect-status と食い違った"))
+                 (doseq [r bad]
+                   (println (str "  " (:source r) " " (:url r)
+                                 " — expected " (:expect r) ", got " (:status r))))
+                 (js/process.exit 1))
+
+             (seq net-err)
+             (do (println (str "FAIL: " (count net-err) " 件が取得できなかった"))
+                 (doseq [r net-err]
+                   (println (str "  " (:source r) " " (:url r) " — " (:error r))))
+                 (js/process.exit 1))
+
+             :else
+             (do (println (str "PASS: " (count ok) " 件すべてが :expect-status と一致"))
+                 (js/process.exit 0))))))
+      (.catch (fn [e]
+                (binding [*print-fn* *print-err-fn*]
+                  (println "REFUSING TO REPORT A PASS: verifier 自身が落ちた --" (.-message e)))
+                (js/process.exit 3)))))
+
+(-main)

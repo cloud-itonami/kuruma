@@ -1,4 +1,4 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; data/sources.edn の全 URL を実際に取得して、目録が現在も引けることを確かめる。
 ;;
 ;; なぜ要るか —— corpus の出典は「書いた日」ではなく「引ける間」だけ有効である。
@@ -14,7 +14,7 @@
 ;;           （superproject CLAUDE.md「検査を書く前・緑を信じる前の 6 問」）。
 ;;
 ;; 使い方:
-;;   nbb scripts/verify_sources.cljk [--catalog data/sources.edn] [--timeout-ms 25000]
+;;   kbb --backend sci scripts/verify_sources.cljk [--catalog data/sources.edn] [--timeout-ms 25000]
 
 (ns verify-sources
   (:require [clojure.edn :as edn]

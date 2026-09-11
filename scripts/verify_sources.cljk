@@ -14,7 +14,7 @@
 ;;           （superproject CLAUDE.md「検査を書く前・緑を信じる前の 6 問」）。
 ;;
 ;; 使い方:
-;;   nbb scripts/verify_sources.cljs [--catalog data/sources.edn] [--timeout-ms 25000]
+;;   nbb scripts/verify_sources.cljk [--catalog data/sources.edn] [--timeout-ms 25000]
 
 (ns verify-sources
   (:require [clojure.edn :as edn]

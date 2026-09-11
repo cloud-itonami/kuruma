@@ -8,7 +8,7 @@ Car information site for kuruma.etzhayyim.com — vehicle specs, reviews, compar
 
 - 正本は `data/sources.edn`（収集源 / 市場統計源 / 規格源、および
   **載せなかった URL とその理由**、**まだ出典を持たないもの**）。
-- 検査は `nbb scripts/verify_sources.cljk` —— 全 URL を実際に取得し、
+- 検査は `kbb --backend sci scripts/verify_sources.cljk` —— 全 URL を実際に取得し、
   `:expect-status` と食い違えば **exit 1**。目録が読めない・URL が 0 件・
   全件が network error のときは **exit 3**（「答えられなかった」を
   「問題が無かった」と同じ値で返さない）。

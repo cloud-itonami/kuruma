@@ -8,7 +8,7 @@
 ;; 由来するかはどこにも書かれていない。
 ;;
 ;; ここはその目録。**引けなかった URL は載せない。**
-;; 検査は scripts/verify_sources.cljs（nbb）。全 :url を実際に取得し、
+;; 検査は scripts/verify_sources.cljk（nbb）。全 :url を実際に取得し、
 ;; :expect-status と食い違えば exit 1 で落ちる。
 ;;
 ;; :verified は「その日にそう観測した」という記録であって保証ではない。
@@ -17,7 +17,7 @@
 {:schema     "kuruma.sources/v1"
  :repository "cloud-itonami/kuruma"
  :purpose    "kuruma.etzhayyim.com の車両 corpus が依拠する外部データ源の目録"
- :verifier   "scripts/verify_sources.cljs"
+ :verifier   "scripts/verify_sources.cljk"
  :verified-at "2026-08-26"
 
  ;; ── 収集源 — corpus の本体を作るもの ────────────────────────────────

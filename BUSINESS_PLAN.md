@@ -22,7 +22,7 @@ Then:
 - Required PV = `10,000,000 / (2.4 × 1,200 / 1000)` = about 3.47M PV/month
 - Practical target range: 3.3M-3.6M PV/month
 
-This is consistent with the existing internal target in `CLAUDE.md` (~3.3M PV/month).
+This is consistent with the existing internal target in `AGENTS.md` (~3.3M PV/month).
 
 ## 3. GTM Premise: "Japan Information to Global"
 

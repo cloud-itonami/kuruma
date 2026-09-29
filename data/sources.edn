@@ -2,7 +2,7 @@
 ;;
 ;; この repo は corpus である。corpus の値は「何が書いてあるか」ではなく
 ;; **「それがどこから来たか」**で決まる。にもかかわらず、抽出時点の kuruma は
-;; 上流を散文（CLAUDE.md の command 表・BUSINESS_PLAN.md の脚注）でしか
+;; 上流を散文（AGENTS.md の command 表・BUSINESS_PLAN.md の脚注）でしか
 ;; 持っておらず、機械可読な出典が 1 件も無かった。scripts/seed_vehicles.mjs は
 ;; "real-world specs" と名乗る 90 台超の諸元を持つが、その諸元がどの出典に
 ;; 由来するかはどこにも書かれていない。
